@@ -12,7 +12,7 @@ class ToDoModel(db.Model):
     task = db.Column(db.String(200))
     summary = db.Column(db.String(500))
 
-db.create_all()
+# db.create_all()
 
 # todos = {}
 
