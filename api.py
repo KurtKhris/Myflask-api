@@ -1,94 +1,116 @@
-from flask import Flask
-from flask_restful import Resource, Api, reqparse, abort, fields, marshal_with
+from flask import Flask, request, jsonify, render_template, abort
 from flask_sqlalchemy import SQLAlchemy
+from flask_marshmallow import Marshmallow
+import os
 
-app = Flask(__name__)
-api = Api(app)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sqlite.db'
+#Initialize app
+app = Flask(__name__,template_folder='template')
+baseDir = os.path.abspath(os.path.dirname(__file__))
+
+#Database
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(baseDir, 'db.sqlite')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+#initialize db
 db = SQLAlchemy(app)
 
-class ToDoModel(db.Model):
+#initialize Marshmallow
+mar = Marshmallow(app)
+
+#Users Class/Model
+class Users(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    task = db.Column(db.String(200))
-    summary = db.Column(db.String(500))
+    name = db.Column(db.String(100), unique=True)
+    faculty = db.Column(db.String(200))
+    department = db.Column(db.String(200))
+    programme = db.Column(db.String(200))
+    year = db.Column(db.String(100))
+    image = db.Column(db.String(100))
 
-# db.create_all()
+    def __init__(self, name, faculty,department,programme,year,image):
+        self.name = name
+        self.faculty = faculty
+        self.department = department
+        self.programme = programme
+        self.year = year
+        self.image = image
 
-# todos = {}
-
-#Post
-task_post_args = reqparse.RequestParser()
-task_post_args.add_argument("task", type=str,help="task is required.", required=True )
-task_post_args.add_argument("summary", type=str,help="summary is required.", required=True)
-
-#Put
-task_put_args = reqparse.RequestParser()
-task_put_args.add_argument("task", type=str )
-task_put_args.add_argument("summary", type=str)
-
-
-resource_fields = {
-    'id': fields.Integer,
-    'task': fields.String,
-    'summary': fields.String
-}
+#User Schema
+class UserSchema(mar.Schema):
+    class Meta:
+        fields = ('id', 'name', 'faculty', 'department', 'programme', 'year', 'image' )
 
 
-class ToDoList(Resource):
-    # @marshal_with(resource_fields)
-    def get(self):
-        tasks = ToDoModel.query.all()
-        todos = {}
-        for task in tasks:
-            todos[task.id] = {"task": task.task, "summary": task.summary}
-        return todos
-    
-    # def getByid(self, todo_id):
-    #     tasks = ToDoModel.query.filter_by(id=todo_id).first()
+#initialize schema
+user_schema = UserSchema()
+users_schema = UserSchema(many=True)
 
 
-class ToDo(Resource):
-    marshal_with(resource_fields)
-    def get(self, todo_id):
-        task = ToDoModel.query.filter_by(id=todo_id).first()
-        if not task:
-            abort(404, message="Could not find task with that id")
-        return task
-    
-    @marshal_with(resource_fields)
-    def post(self, todo_id):
-        args = task_post_args.parse_args()
-        task = ToDoModel.query.filter_by(id=todo_id).first()
-        if task:
-            abort(409, message="task id taken...")
-        
-        todo = ToDoModel(id=todo_id, task=args['task'], summary=args['summary'])
-        db.session.add(todo)
-        db.session.commit()
-        return todo, 201
+
+#Create a user
+@app.route('/api/v1/user', methods=['POST'])
+def addUser():
+    name = request.json['name']
+    faculty = request.json['faculty']
+    department = request.json['department']
+    programme = request.json['programme']
+    year = request.json['year']
+    image = request.json['image']
+
+    newUser = Users(name, faculty, department, programme, year, image)
+
+    db.session.add(newUser)
+    db.session.commit()
+    return user_schema.jsonify(newUser)
 
 
-    @marshal_with(resource_fields)
-    def put(selt, todo_id):
-        args = task_put_args.parse_args()
-        task = ToDoModel.query.filter_by(id=todo_id).first()
-        if not task:
-            abort(404, message="task doesn't exist, cannot update")
-        if args['task']:
-            task.task = args['task']
-        if args['summary']:
-            task.summary = args['summary']
-        db.session.commit()
-        return task
-    
-    def delete(self, todo_id):
-        task = ToDoModel.query.filter_by(id=todo_id).first()
-        db.session.delete(task)
-        return 'Todo Deleted', 204
+#Get all Users
+@app.route('/api/v1/users/all', methods=['GET'])
+def getUsers():
+    allUsers = Users.query.all()
+    result = users_schema.dump(allUsers)
+    return jsonify(result)
 
 
-api.add_resource(ToDo,'/api/v1/todos/<int:todo_id>')
-api.add_resource(ToDoList,'/api/v1/todos')
+#Get a single User
+@app.route('/api/v1/user/<id>', methods=['GET'])
+def getUser(id):
+    user = Users.query.get(id)
+    return user_schema.jsonify(user)
 
+
+#Update user details
+@app.route('/api/v1/user/<id>', methods=['PUT'])
+def updateUser(id):
+    user = Users.query.get(id)
+    name = request.json['name']
+    faculty = request.json['faculty']
+    department = request.json['department']
+    programme = request.json['programme']
+    year = request.json['year']
+    image = request.json['image']
+
+    user.name = name
+    user.faculty = faculty
+    user.department = department
+    user.programme = programme
+    user.year = year
+    user.image = image
+
+    db.session.commit()
+
+    return user_schema.jsonify(user)
+
+
+#Delete a user
+@app.route('/api/v1/user/<id>', methods=['DELETE'])
+def deleteUser(id):
+    user = Users.query.get(id)
+    db.session.delete(user)
+    db.session.commit()
+
+    return user_schema.jsonify(user)
+
+#Run Server
 if __name__ == '__main__':
     app.run(debug=True)
